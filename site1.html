@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Input Example</title>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ion-rangeslider/2.3.1/css/ion.rangeSlider.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ion-rangeslider/2.3.1/js/ion.rangeSlider.min.js"></script>
+    <style>
+        /* Partie CSS */
+        body {
+            display: flex;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #f3f3f3;
+            flex-direction: column;
+        }
+
+        #header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 20px;
+            color: #333;
+            padding: 20px;
+            background-color: #fff;
+            border-bottom: 1px solid #ddd;
+        }
+
+        #input {
+            flex: 0 0 0px;
+            padding: 0;
+            background-color: #fff;
+            cursor: pointer;
+        }
+
+        #chartContainer {
+            flex: 1;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #coordinates {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        #sidebar {
+            padding: 20px;
+            width: 100%;
+            background-color: #fff;
+            cursor: pointer;
+            text-align: left;
+            border-radius: 10px;
+            margin: 0 auto;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        canvas {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 1000px;
+            height: 300px;
+            margin: 0 auto;
+        }
+
+        #yearRange {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        Historique des indicateurs éducatifs au Maroc
+    </div>
+
+    <div id="input">
+        <input type="file" id="fileInput">
+        <select id="comboBox"></select>
+    </div>
+
+    <div id="chartContainer">
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <div id="coordinates"></div>
+
+    <div id="sidebar">
+        <label for="yearRange">Year Range: <span id="selectedYear">1971</span></label>
+        <input type="text" id="yearRange" name="yearRange" />
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            const comboBox = $('#comboBox');
+            const yearRange = $('#yearRange');
+            const selectedYear = $('#selectedYear');
+            const coordinatesDiv = $('#coordinates');
+            const ctx = document.getElementById('myChart').getContext('2d');
+            let chart;
+            let years;
+            let selectedData;
+            let lastSelectedIndicator;
+
+            document.getElementById('fileInput').addEventListener('change', function (event) {
+                const file = event.target.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            comboBox.empty();
+
+                            data.forEach(function (d) {
+                                comboBox.append($('<option></option>').attr('data-json', JSON.stringify(d)).text(d['Indicator Name']));
+                            });
+
+                            comboBox.change(function () {
+                                var selectedOption = $(this).find(':selected');
+                                selectedData = JSON.parse(selectedOption.attr('data-json'));
+                                lastSelectedIndicator = selectedData['Indicator Name'];
+
+                                renderChart();
+                            });
+                        } catch (error) {
+                            console.error("Erreur lors de l'analyse du fichier JSON :", error);
+                        }
+                    };
+
+                    reader.readAsText(file);
+                } else {
+                    console.error("Aucun fichier sélectionné.");
+                }
+            });
+
+            function renderChart() {
+                if (chart) {
+                    chart.destroy();
+                }
+
+                years = Object.keys(selectedData).filter(key => key !== 'Indicator Name');
+                const values = years.map(year => selectedData[year]);
+
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: lastSelectedIndicator,
+                            borderColor: 'rgb(75, 192, 192)',
+                            data: [],
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Years'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Values'
+                                }
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: lastSelectedIndicator
+                            }
+                        },
+                        animation: {
+                            onComplete: function (animation) {
+                                drawLines(animation.chart, animation.chart.ctx);
+                            }
+                        },
+                        onHover: function (event, elements) {
+                            if (elements.length > 0) {
+                                const index = elements[0].index;
+                                const year = chart.data.labels[index];
+                                const value = chart.data.datasets[0].data[index];
+                                selectedYear.text(year);
+                                showCoordinates(event, year, value);
+                            }
+                        }
+                    }
+                });
+
+                // Filtrer les années en fonction de la plage sélectionnée
+                const selectedStartYear = parseInt(years[0], 10);
+                const selectedEndYear = parseInt(years[years.length - 1], 10);
+
+                yearRange.ionRangeSlider({
+                    type: "double",
+                    grid: true,
+                    min: parseInt(years[0], 10),
+                    max: parseInt(years[years.length - 1], 10),
+                    from: selectedStartYear,
+                    to: selectedEndYear,
+                    onFinish: function (data) {
+                        const selectedStartYear = data.from;
+                        const selectedEndYear = data.to;
+
+                        const filteredYears = years.filter(year => parseInt(year, 10) >= selectedStartYear && parseInt(year, 10) <= selectedEndYear);
+                        const filteredValues = filteredYears.map(year => selectedData[year]);
+
+                        chart.data.labels = filteredYears;
+                        chart.data.datasets[0].data = filteredValues;
+                        chart.update();
+                    }
+                });
+
+                // Initialiser le graphique avec toutes les données
+                chart.data.labels = years;
+                chart.data.datasets[0].data = values;
+                chart.update();
+            }
+
+            function drawLines(chart, ctx) {
+                const datasets = chart.config.data.datasets;
+                const meta = chart.getDatasetMeta(0);
+
+                meta.data.forEach((point, index) => {
+                    if (index < meta.data.length - 1) {
+                        const startX = datasets[0].data[index].x;
+                        const startY = datasets[0].data[index].y;
+                        const endX = datasets[0].data[index + 1].x;
+                        const endY = datasets[0].data[index + 1].y;
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(endX, endY);
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = 'rgb(75, 192, 192)';
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                });
+            }
+
+            function showCoordinates(event, year, value) {
+                coordinatesDiv.text(`Year: ${year}, Value: ${value}`);
+            }
+        });
+    </script>
+</body>
+</html>
